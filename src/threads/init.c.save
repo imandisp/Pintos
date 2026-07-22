@@ -60,9 +60,6 @@ static size_t user_page_limit = SIZE_MAX;
 static void bss_init (void);
 static void paging_init (void);
 
-static void interactive_shell (void);
-static void read_shell_command (char command[], size_t size);
-
 static char **read_command_line (void);
 static char **parse_options (char **argv);
 static void run_actions (char **argv);
@@ -136,7 +133,7 @@ pintos_init (void)
     /* Run actions specified on kernel command line. */
     run_actions (argv);
   } else {
-    interactive_shell();
+    // TODO: no command line passed to kernel. Run interactively 
   }
 
   /* Finish up. */
@@ -150,115 +147,6 @@ pintos_init (void)
 
    The start and end of the BSS segment is recorded by the
    linker as _start_bss and _end_bss.  See kernel.lds. */
-
-#define SHELL_COMMAND_SIZE 128
-
-static void
-read_shell_command(char command[],size_t size)
-{
-  size_t position=0;
-
-  while (true)
-  {
-    uint8_t character=input_getc();
-
-    /* The keyboard driver returns '\r' for the Enter key. */
-    if (character=='\r'|| character=='\n')
-    {
-      command[position]='\0';
-      printf("\n");
-      return;
-    }
-
-    /* Handle Backspace and Delete. */
-      if (character == '\b' || character == 127)
-        {
-          if (position > 0)
-            {
-              position--;
-              printf ("\b \b");
-            }
-
-          continue;
-        }
-
-      /* Reserve one final position for '\0'. */
-      if (position < size - 1)
-        {
-          command[position] = (char) character;
-          position++;
-
-          /* Echo the typed character to the screen. */
-          printf ("%c", character);
-        }
-
-  }
-}
-
-/* Runs the Pintos interactive shell. */
-static void
-interactive_shell (void)
-{
-  char command[SHELL_COMMAND_SIZE];
-
-  printf ("\n");
-  printf ("====================================\n");
-  printf ("       Welcome to Pintos Shell      \n");
-  printf ("====================================\n");
-  printf ("Commands: whoami, shutdown, time, ram,\n");
-  printf ("          thread, priority, exit\n\n");
-
-  while (true)
-    {
-      printf ("CS2042> ");
-
-      read_shell_command (command, sizeof command);
-
-      if (strcmp (command, "whoami") == 0)
-        {
-          printf ("Imandi Perera - 240497R\n");
-        }
-      else if (strcmp (command, "shutdown") == 0)
-        {
-          printf ("Shutting down Pintos...\n");
-          shutdown_power_off ();
-        }
-      else if (strcmp (command, "time") == 0)
-        {
-          printf ("Seconds since Unix epoch: %ld\n",
-                  (long) rtc_get_time ());
-        }
-      else if (strcmp (command, "ram") == 0)
-        {
-          printf ("RAM available to Pintos: %"
-                  PRIu32 " kB\n",
-                  init_ram_pages * PGSIZE / 1024);
-        }
-      else if (strcmp (command, "thread") == 0)
-        {
-          thread_print_stats ();
-        }
-      else if (strcmp (command, "priority") == 0)
-        {
-          printf ("Current thread priority: %d\n",
-                  thread_get_priority ());
-        }
-      else if (strcmp (command, "exit") == 0)
-        {
-          printf ("Exiting interactive shell... Bye!\n");
-          return;
-        }
-      else if (strcmp (command, "") == 0)
-        {
-          /* Ignore an empty command. */
-        }
-      else
-        {
-          printf ("Unknown command: %s\n", command);
-        }
-    }
-}
-
 static void
 bss_init (void) 
 {
@@ -543,3 +431,4 @@ locate_block_device (enum block_type role, const char *name)
     }
 }
 #endif
+
