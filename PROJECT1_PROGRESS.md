@@ -164,14 +164,70 @@ A clean rebuild succeeded. The following tests passed using QEMU:
 The existing warnings came from supplied Pintos library/device files, not from
 the new `thread.c` code.
 
+### 2.2 Priority-Aware Synchronization
+
+**Status:** Implemented and verified, but not yet committed.
+
+**Source files:** `src/threads/synch.c`, `src/devices/timer.c`
+
+#### Problem
+
+The original semaphore and condition-variable implementations woke the first
+waiting thread, regardless of priority. Timer wake-ups also did not explicitly
+request immediate preemption when they made a higher-priority thread ready.
+
+#### Solution
+
+Semaphore and condition-variable waiters are now ordered by priority. Wake-up
+operations select the highest-priority waiter and request an immediate yield
+when that waiter outranks the running thread. The timer interrupt uses
+`intr_yield_on_return()` when it wakes a higher-priority sleeper.
+
+#### Main Changes
+
+- Added a comparator for semaphore waiters.
+- Changed `sema_down()` to insert waiters in priority order.
+- Changed `sema_up()` to re-sort and wake the highest-priority waiter.
+- Made `sema_up()` yield directly in thread context or request a yield when it
+  runs in interrupt context.
+- Stored each condition-variable waiter's priority in `semaphore_elem`.
+- Changed `cond_wait()` to insert condition waiters in priority order.
+- Changed `cond_signal()` to wake the highest-priority condition waiter.
+- Changed `timer_interrupt()` to request preemption when it wakes a thread with
+  higher priority than the interrupted thread.
+
+#### Concepts Learned
+
+- Synchronization wait lists must follow the scheduler's priority policy.
+- A blocked thread's priority can change, so a waiter list may need to be
+  re-sorted immediately before choosing a thread.
+- Normal thread code may call `thread_yield()`, but an interrupt handler must
+  use `intr_yield_on_return()`.
+- Strict priority scheduling applies whenever a thread becomes ready, not only
+  when a new thread is created.
+
+#### Verification
+
+A clean rebuild succeeded. The following tests passed using QEMU:
+
+- `priority-sema`
+- `priority-condvar`
+- `priority-fifo`
+- `alarm-priority`
+- `priority-change`
+- `priority-preempt`
+
+One harmless comment typo remains to be corrected before committing:
+`//* Represents...` in `src/threads/synch.c` should use the normal
+`/* ... */` comment form.
+
 ### Remaining Priority Work
 
 Planned order:
 
-1. Respect priorities in semaphores and condition variables.
-2. Track base and effective priorities.
-3. Implement multiple and nested lock priority donation.
-4. Remove donations when their associated lock is released.
+1. Track base and effective priorities.
+2. Implement multiple and nested lock priority donation.
+3. Remove donations when their associated lock is released.
 
 ## 3. Advanced Scheduler (MLFQS)
 
@@ -181,6 +237,5 @@ This stage will be started only after the basic priority scheduler is working.
 
 ## Next Activity
 
-Implement and test priority-aware semaphores and condition variables so the
-highest-priority waiter wakes first and can immediately preempt a lower-priority
-running thread.
+Implement lock priority donation, including one donor, multiple donors, nested
+donation, base-priority changes, and removal of lock-specific donations.

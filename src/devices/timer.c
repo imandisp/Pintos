@@ -203,6 +203,7 @@ timer_print_stats (void)
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
+  bool should_yield = false;
   ticks++;
 
   while (!list_empty (&sleepers))
@@ -216,11 +217,19 @@ timer_interrupt (struct intr_frame *args UNUSED)
       if (s->wake_tick > ticks)
         break;
 
+      /* A higher-priority waking thread should run after this interrupt. */
+      if (s->thread->priority > thread_current ()->priority)
+        should_yield = true;
+
       list_pop_front (&sleepers);
       thread_unblock (s->thread);
     }
 
   thread_tick ();
+
+  /* Interrupt handlers request a yield instead of yielding directly. */
+  if (should_yield)
+    intr_yield_on_return ();
 }
 
 static bool
