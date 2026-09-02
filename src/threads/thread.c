@@ -50,6 +50,11 @@ static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
 
+/* Compares two ready threads so higher-priority threads come first. */
+static bool priority_more (const struct list_elem *a,
+                           const struct list_elem *b,
+                           void *aux);
+
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
 static unsigned thread_ticks;   /* # of timer ticks since last yield. */
@@ -198,8 +203,12 @@ thread_create (const char *name, int priority,
   sf->eip = switch_entry;
   sf->ebp = 0;
 
-  /* Add to run queue. */
+  /* Add the new thread to the priority-ordered ready queue. */
   thread_unblock (t);
+
+/* Immediately give the CPU to a newly created higher-priority thread. */
+  if (t->priority > thread_current ()->priority)
+    thread_yield ();
 
   return tid;
 }
@@ -237,7 +246,11 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  /* Insert the newly ready thread into its correct priority position. */
+  list_insert_ordered (&ready_list,
+                     &t->elem,
+                     priority_more,
+                     NULL);
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -307,8 +320,12 @@ thread_yield (void)
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+  /* Return the yielding thread to its correct priority position. */
+  if (cur != idle_thread)
+    list_insert_ordered (&ready_list,
+                        &cur->elem,
+                        priority_more,
+                        NULL);
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -332,10 +349,40 @@ thread_foreach (thread_action_func *func, void *aux)
 }
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
+/* Changes the current thread's priority and yields if it is no longer highest. */
 void
-thread_set_priority (int new_priority) 
+thread_set_priority (int new_priority)
 {
+  enum intr_level old_level;
+  bool should_yield = false;
+
+  /* Reject priorities outside Pintos's valid range of 0 through 63. */
+  ASSERT (PRI_MIN <= new_priority && new_priority <= PRI_MAX);
+
+  /* Protect the priority and ready-list check from timer interrupts. */
+  old_level = intr_disable ();
+
   thread_current ()->priority = new_priority;
+
+  /* The front is the highest-priority ready thread because the list is sorted. */
+  if (!list_empty (&ready_list))
+    {
+      struct thread *highest_ready;
+
+      highest_ready = list_entry (list_front (&ready_list),
+                                  struct thread,
+                                  elem);
+
+      /* Yield when another ready thread now has a higher priority. */
+      if (highest_ready->priority > new_priority)
+        should_yield = true;
+    }
+
+  intr_set_level (old_level);
+
+  /* Yield only after restoring the original interrupt state. */
+  if (should_yield)
+    thread_yield ();
 }
 
 /* Returns the current thread's priority. */
@@ -581,4 +628,22 @@ allocate_tid (void)
 
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
+
+/* Returns true when thread A has a higher priority than thread B. */
+static bool
+priority_more (const struct list_elem *a,
+               const struct list_elem *b,
+               void *aux UNUSED)
+{
+  const struct thread *thread_a;
+  const struct thread *thread_b;
+
+  /* Convert generic list elements back into thread structures. */
+  thread_a = list_entry (a, struct thread, elem);
+  thread_b = list_entry (b, struct thread, elem);
+
+  /* A larger number represents a higher priority. */
+  return thread_a->priority > thread_b->priority;
+}
+
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
